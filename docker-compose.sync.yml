@@ -1,0 +1,97 @@
+# Two-node setup on ONE machine (e.g. for testing sync locally).
+# For real use: each operator runs the normal docker-compose on their own
+# computer and sets SYNC_PEERS to the other's IP — see COLLABORATION.md.
+#
+# Usage on single machine:
+#   docker-compose -f docker-compose.sync.yml up --build
+#   Operator1: http://localhost:3000 (backend :8000) | Operator2: http://localhost:3001 (backend :8001)
+
+
+services:
+  backend-op1:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pentest-backend-op1
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - sync-storage-op1:/app/storage
+      - sync-reports-op1:/app/reports
+    env_file:
+      - .env
+    environment:
+      - HOST_STORAGE_PATH=${PWD}/storage
+      - HOST_HOME_DIR=${HOME}
+      - SYNC_ENABLED=true
+      - NODE_ID=node-op1
+      - SYNC_PEERS=http://backend-op2:8000
+      - DATABASE_URL=sqlite+aiosqlite:////app/pentest_op1.db
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  backend-op2:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: pentest-backend-op2
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./backend:/app
+      - sync-storage-op2:/app/storage
+      - sync-reports-op2:/app/reports
+    env_file:
+      - .env
+    environment:
+      - HOST_STORAGE_PATH=${PWD}/storage
+      - HOST_HOME_DIR=${HOME}
+      - SYNC_ENABLED=true
+      - NODE_ID=node-op2
+      - SYNC_PEERS=http://backend-op1:8000
+      - DATABASE_URL=sqlite+aiosqlite:////app/pentest_op2.db
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  frontend-op1:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: pentest-frontend-op1
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+      - VITE_AUTH_REQUIRED=${VITE_AUTH_REQUIRED:-true}
+    depends_on:
+      - backend-op1
+    command: npm run dev -- --host
+
+  frontend-op2:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: pentest-frontend-op2
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8001
+      - VITE_AUTH_REQUIRED=${VITE_AUTH_REQUIRED:-true}
+    depends_on:
+      - backend-op2
+    command: npm run dev -- --host
+
+volumes:
+  sync-storage-op1:
+  sync-storage-op2:
+  sync-reports-op1:
+  sync-reports-op2:
